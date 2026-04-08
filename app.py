@@ -31,7 +31,6 @@ with st.sidebar:
     st.write(f"텍스트 모델: `{TEXT_MODEL}`")
     st.write(f"이미지 모델: `{IMAGE_MODEL}`")
     st.write(f"이미지 크기: `{IMAGE_SIZE}`")
-    )
 
 col1, col2 = st.columns([1, 1])
 
