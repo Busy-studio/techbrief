@@ -40,25 +40,24 @@ col1, col2 = st.columns([1, 1])
 
 with col1:
     uploaded_file = st.file_uploader(
-        "SMK PDF 또는 이미지 업로드",
+        "SMK PDF 업로드",
         type=["pdf", "png", "jpg", "jpeg", "webp", "bmp"],
     )
     style_zip = st.file_uploader(
         "스타일 ZIP 업로드 (선택)",
         type=["zip"],
-        help="업로드하지 않으면 기본 스타일 ZIP URL을 사용합니다.",
+        help="업로드하지 않으면 Yeonhee 스타일을 사용합니다.",
     )
     run = st.button("이미지 생성", type="primary", use_container_width=True)
 
 with col2:
     st.info(
-        "GitHub + Streamlit Community Cloud 배포용 기본 구조로 작성되어 있습니다.\n\n"
         "업로드 파일은 임시 파일로 처리되고, 결과 이미지는 다운로드할 수 있습니다."
     )
 
 if run:
     if uploaded_file is None:
-        st.warning("SMK PDF 또는 이미지를 먼저 업로드하세요.")
+        st.warning("SMK PDF 를 먼저 업로드하세요.")
     else:
         try:
             api_key = get_api_key()
