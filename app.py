@@ -24,16 +24,13 @@ def get_api_key() -> str:
 
 
 st.title("Tech Brief 이미지 생성기")
-st.caption("SMK PDF/이미지를 업로드하면 부산대학교 Tech Brief 스타일 배너를 생성합니다.")
+st.caption("SMK PDF를 업로드하면 부산대학교 Tech Brief 스타일 배너를 생성합니다.")
 
 with st.sidebar:
     st.subheader("실행 설정")
     st.write(f"텍스트 모델: `{TEXT_MODEL}`")
     st.write(f"이미지 모델: `{IMAGE_MODEL}`")
     st.write(f"이미지 크기: `{IMAGE_SIZE}`")
-    st.markdown(
-        "- 배포 시 API 키는 `st.secrets[\"GOOGLE_API_KEY\"]`로 읽습니다.\n"
-        "- `secrets.toml`은 GitHub에 올리지 마세요."
     )
 
 col1, col2 = st.columns([1, 1])
