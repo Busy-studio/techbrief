@@ -23,7 +23,7 @@ from google.genai import types
 # =========================================================
 API_KEY_ENV_NAME = "GOOGLE_API_KEY"
 TEXT_MODEL = os.getenv("TEXT_MODEL", "gemini-2.5-flash")
-IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gemini-3.1-flash-image-preview")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gemini-3.1-flash-image")
 
 DEFAULT_STYLE_ZIP_URL = os.getenv(
     "DEFAULT_STYLE_ZIP_URL",
