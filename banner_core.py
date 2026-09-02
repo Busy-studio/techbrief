@@ -691,7 +691,68 @@ def make_display_summary(data: Dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def build_full_banner_prompt(data: Dict[str, Any], style_ref: Dict[str, Any]) -> str:
+def get_canvas_text_layout_instruction(image_size: str, keyword_count: int) -> str:
+    size = clean_text(image_size or IMAGE_SIZE) or IMAGE_SIZE
+    try:
+        width_s, height_s = size.lower().split("x", 1)
+        width = int(width_s)
+        height = int(height_s)
+    except Exception:
+        width, height = 2048, 1152
+        size = f"{width}x{height}"
+
+    # 절대 픽셀값이 아니라 캔버스 대비 비율을 중심으로 지시하여
+    # 해상도 변경 시에도 같은 시각적 비례를 유지한다.
+    if width <= 1280:
+        preset_note = "compact canvas: keep text especially restrained and preserve more breathing room"
+        keyword_height = "about 5% to 6.5% of canvas height"
+        label_width = "about 15% to 17% of canvas width"
+        outer_margin = "about 2.0% to 2.8% of canvas width/height"
+    elif width <= 1600:
+        preset_note = "standard canvas: maintain balanced text-to-image proportions"
+        keyword_height = "about 4.8% to 6.2% of canvas height"
+        label_width = "about 14% to 16.5% of canvas width"
+        outer_margin = "about 2.0% to 2.6% of canvas width/height"
+    else:
+        preset_note = "large final canvas: do not enlarge text merely because more pixels are available"
+        keyword_height = "about 4.5% to 6.0% of canvas height"
+        label_width = "about 13.5% to 16% of canvas width"
+        outer_margin = "about 1.8% to 2.5% of canvas width/height"
+
+    if keyword_count <= 0:
+        keyword_layout = "No technology keyword text is required."
+    elif keyword_count == 1:
+        keyword_layout = "Use one keyword group only, occupying one clean open area; do not center it like a movie title."
+    elif keyword_count == 2:
+        keyword_layout = "Use two separated keyword groups with balanced visual weight; do not stack them into one oversized title block."
+    else:
+        keyword_layout = "Use three keyword groups at most, distributed across available negative space with clear separation and no crowding."
+
+    return f"""
+[CANVAS-AWARE TEXT SCALE AND POSITION - CRITICAL]
+- Target output canvas: {size} pixels, 16:9
+- {preset_note}
+- Scale all text by VISUAL PROPORTION of the canvas, not by fixed absolute pixel assumptions
+- University rounded box target width: {label_width}
+- University box outer top/side margin: {outer_margin}
+- Department/professor subtitle should be about 45% to 55% of the visual height of the university-name text
+- Technology keyword character height should generally stay around {keyword_height}
+- Technology keywords must remain secondary to the photographic subjects and must not consume a large continuous area of the image
+- Keep at least roughly 2% of canvas width between text groups and important subject edges whenever possible
+- Keep text away from crop-sensitive outer edges and avoid touching the canvas border
+- Prefer negative-space placement instead of covering faces, devices, focal equipment, or the primary technology object
+- If the composition is busy, REDUCE keyword size before reducing photographic subject clarity
+- Never increase text size simply because the selected output resolution is larger
+- Preserve nearly the same perceived text/image proportion across 1280x720, 1536x864, and 2048x1152 outputs
+- {keyword_layout}
+""".strip()
+
+
+def build_full_banner_prompt(
+    data: Dict[str, Any],
+    style_ref: Dict[str, Any],
+    image_size: Optional[str] = None,
+) -> str:
     dept = clean_text(data.get("department", ""))
     professor = clean_text(data.get("professor", ""))
     field_group = clean_text(data.get("field_group", "기타")) or "기타"
@@ -717,6 +778,9 @@ def build_full_banner_prompt(data: Dict[str, Any], style_ref: Dict[str, Any]) ->
     strict_default_style = style_ref.get("profile") == "pnu_default_strict_photo_montage_v2"
 
     typography_instruction = get_field_typography_instruction(field_group, style_ref)
+    canvas_text_layout_instruction = get_canvas_text_layout_instruction(
+        image_size or IMAGE_SIZE, len(keywords)
+    )
 
     if strict_default_style and len(keywords) == 0:
         text_instruction = (
@@ -853,6 +917,8 @@ Create a 16:9 wide horizontal Korean university technology banner.
 
 This image must follow the Busan National University Tech Brief-style reference pattern.
 It must NOT look like a detailed infographic, poster, brochure, teaching slide, or explanatory diagram.
+
+{canvas_text_layout_instruction}
 
 [Direct Reference Image Rule]
 - Direct reference images from the style ZIP may be provided together with this prompt
@@ -1208,7 +1274,11 @@ def process_smk_paths(
         log_step(logs, "기술 내용 구조화 분석 완료")
         log_step(logs, f"후처리 키워드: {', '.join(data.get('keywords', []))}")
 
-        final_prompt = build_full_banner_prompt(data, style_ref)
+        final_prompt = build_full_banner_prompt(
+            data,
+            style_ref,
+            image_size=image_size,
+        )
         log_step(logs, "최종 배너 프롬프트 생성 완료")
 
         final_img_bytes = generate_final_banner(
