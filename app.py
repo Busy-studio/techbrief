@@ -4,6 +4,7 @@ import streamlit as st
 
 from banner_core import (
     IMAGE_MODEL,
+    IMAGE_QUALITY,
     IMAGE_SIZE,
     TEXT_MODEL,
     process_smk_streamlit,
@@ -14,12 +15,12 @@ st.set_page_config(page_title="Tech Brief 이미지 생성기", layout="wide")
 
 
 def get_api_key() -> str:
-    if "GOOGLE_API_KEY" in st.secrets:
-        return st.secrets["GOOGLE_API_KEY"]
-    if os.getenv("GOOGLE_API_KEY"):
-        return os.getenv("GOOGLE_API_KEY", "")
+    if "OPENAI_API_KEY" in st.secrets:
+        return str(st.secrets["OPENAI_API_KEY"]).strip()
+    if os.getenv("OPENAI_API_KEY"):
+        return os.getenv("OPENAI_API_KEY", "").strip()
     raise RuntimeError(
-        "GOOGLE_API_KEY가 설정되지 않았습니다. Streamlit Cloud Secrets 또는 로컬 .streamlit/secrets.toml을 확인하세요."
+        "OPENAI_API_KEY가 설정되지 않았습니다. Streamlit Cloud Secrets 또는 로컬 .streamlit/secrets.toml을 확인하세요."
     )
 
 
@@ -31,6 +32,7 @@ with st.sidebar:
     st.write(f"텍스트 모델: `{TEXT_MODEL}`")
     st.write(f"이미지 모델: `{IMAGE_MODEL}`")
     st.write(f"이미지 크기: `{IMAGE_SIZE}`")
+    st.write(f"이미지 품질: `{IMAGE_QUALITY}`")
 
 col1, col2 = st.columns([1, 1])
 

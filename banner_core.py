@@ -1,4 +1,6 @@
+import base64
 import hashlib
+import io
 import json
 import mimetypes
 import os
@@ -15,27 +17,28 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import fitz  # PyMuPDF
-from google import genai
-from google.genai import types
+from PIL import Image
+from openai import OpenAI
 
 # =========================================================
 # 환경설정
 # =========================================================
-API_KEY_ENV_NAME = "GOOGLE_API_KEY"
-TEXT_MODEL = os.getenv("TEXT_MODEL", "gemini-2.5-flash")
-IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gemini-3.1-flash-image")
+API_KEY_ENV_NAME = "OPENAI_API_KEY"
+TEXT_MODEL = os.getenv("TEXT_MODEL", "gpt-5.6-luna")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gpt-image-2")
 
 DEFAULT_STYLE_ZIP_URL = os.getenv(
     "DEFAULT_STYLE_ZIP_URL",
     "https://drive.google.com/uc?export=download&id=1tOFtgXh1M08dHfDVJB_antm8peF61RTj",
 )
 
-IMAGE_SIZE = os.getenv("IMAGE_SIZE", "1K")
-GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "3"))
-GEMINI_BASE_WAIT = float(os.getenv("GEMINI_BASE_WAIT", "2.0"))
+IMAGE_SIZE = os.getenv("IMAGE_SIZE", "2048x1152")
+IMAGE_QUALITY = os.getenv("IMAGE_QUALITY", "high")
+OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "3"))
+OPENAI_BASE_WAIT = float(os.getenv("OPENAI_BASE_WAIT", "2.0"))
 MAX_STYLE_IMAGES = int(os.getenv("MAX_STYLE_IMAGES", "6"))
-MAX_STYLE_ANALYSIS_IMAGES_FOR_GEMINI = int(
-    os.getenv("MAX_STYLE_ANALYSIS_IMAGES_FOR_GEMINI", "4")
+MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI = int(
+    os.getenv("MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI", "4")
 )
 
 APP_DIR = Path(__file__).resolve().parent
@@ -77,13 +80,32 @@ def mime_from_path(path: str) -> str:
     return mimetypes.guess_type(path)[0] or "image/png"
 
 
-def get_client(api_key: Optional[str] = None) -> genai.Client:
+def get_client(api_key: Optional[str] = None) -> OpenAI:
     key = (api_key or os.getenv(API_KEY_ENV_NAME, "")).strip()
     if not key:
         raise ValueError(
             f"{API_KEY_ENV_NAME}가 설정되어 있지 않습니다. Streamlit secrets 또는 환경변수를 확인하세요."
         )
-    return genai.Client(api_key=key)
+    return OpenAI(api_key=key)
+
+
+def image_bytes_to_data_url(image_bytes: bytes, mime_type: str) -> str:
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def parse_json_response(text: str) -> Dict[str, Any]:
+    raw = (text or "").strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```(?:json)?\s*", "", raw, flags=re.IGNORECASE)
+        raw = re.sub(r"\s*```$", "", raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
+        if not match:
+            raise
+        return json.loads(match.group(0))
 
 
 def normalize_google_drive_url(url: str) -> str:
@@ -203,12 +225,12 @@ def postprocess_analysis_data(data: Dict[str, Any]) -> Dict[str, Any]:
     return data
 
 
-def call_gemini_with_retry(
+def call_openai_with_retry(
     api_func,
     logs: Optional[List[str]] = None,
-    step_name: str = "Gemini API 호출",
-    max_retries: int = GEMINI_MAX_RETRIES,
-    base_wait: float = GEMINI_BASE_WAIT,
+    step_name: str = "OpenAI API 호출",
+    max_retries: int = OPENAI_MAX_RETRIES,
+    base_wait: float = OPENAI_BASE_WAIT,
 ):
     last_error = None
     for attempt in range(1, max_retries + 1):
@@ -218,10 +240,14 @@ def call_gemini_with_retry(
             return api_func()
         except Exception as e:  # pragma: no cover
             last_error = e
-            msg = str(e)
+            msg = str(e).lower()
             transient_error = any(
-                t in msg
-                for t in ["503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "500", "502", "504", "INTERNAL"]
+                token in msg
+                for token in [
+                    "429", "500", "502", "503", "504",
+                    "rate limit", "timeout", "temporarily",
+                    "connection", "server error",
+                ]
             )
             if logs is not None:
                 log_step(logs, f"{step_name} 실패 ({attempt}/{max_retries}): {type(e).__name__}: {e}")
@@ -260,7 +286,16 @@ def extract_pdf_text_and_first_page_png(pdf_path: str, dpi: int = 180) -> Tuple[
 def load_image_bytes(image_path: str) -> Tuple[bytes, str]:
     mime_type = mimetypes.guess_type(image_path)[0] or "image/png"
     with open(image_path, "rb") as f:
-        return f.read(), mime_type
+        raw = f.read()
+
+    # OpenAI vision 입력은 BMP를 직접 받지 않으므로 기존 BMP 지원은 PNG 변환으로 유지한다.
+    if Path(image_path).suffix.lower() == ".bmp" or mime_type == "image/bmp":
+        with Image.open(io.BytesIO(raw)) as img:
+            converted = io.BytesIO()
+            img.convert("RGB").save(converted, format="PNG")
+            return converted.getvalue(), "image/png"
+
+    return raw, mime_type
 
 
 def prepare_input(path: str) -> Tuple[str, bytes, str, str]:
@@ -328,7 +363,7 @@ def collect_image_paths(root_dir: str, max_count: int = MAX_STYLE_IMAGES) -> Lis
     return list(dict.fromkeys(sampled))
 
 
-def pick_style_images_for_gemini(image_paths: List[str], max_count: int = MAX_STYLE_ANALYSIS_IMAGES_FOR_GEMINI) -> List[str]:
+def pick_style_images_for_openai(image_paths: List[str], max_count: int = MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI) -> List[str]:
     if len(image_paths) <= max_count:
         return image_paths
     step = len(image_paths) / max_count
@@ -479,7 +514,7 @@ JSON 외 설명문 절대 금지.
 
 
 def analyze_style_reference(
-    client: genai.Client,
+    client: OpenAI,
     style_image_paths: List[str],
     cache_key: Optional[str],
     logs: List[str],
@@ -492,27 +527,32 @@ def analyze_style_reference(
             log_step(logs, f"스타일 분석 캐시 재사용: {cache_path}")
             return json.loads(cache_path.read_text(encoding="utf-8"))
 
-    style_image_paths = pick_style_images_for_gemini(style_image_paths, MAX_STYLE_ANALYSIS_IMAGES_FOR_GEMINI)
+    style_image_paths = pick_style_images_for_openai(
+        style_image_paths, MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI
+    )
     if not style_image_paths:
         raise ValueError("스타일 분석용 이미지가 없습니다.")
 
-    parts: List[Any] = [STYLE_ANALYSIS_PROMPT]
-    for p in style_image_paths:
-        with open(p, "rb") as f:
-            parts.append(types.Part.from_bytes(data=f.read(), mime_type=mime_from_path(p)))
+    content: List[Dict[str, Any]] = [
+        {"type": "input_text", "text": STYLE_ANALYSIS_PROMPT}
+    ]
+    for image_path in style_image_paths:
+        image_bytes, mime_type = load_image_bytes(image_path)
+        content.append({
+            "type": "input_image",
+            "image_url": image_bytes_to_data_url(image_bytes, mime_type),
+            "detail": "high",
+        })
 
     def _call():
-        return client.models.generate_content(
+        return client.responses.create(
             model=TEXT_MODEL,
-            contents=parts,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                response_mime_type="application/json",
-            ),
+            input=[{"role": "user", "content": content}],
+            text={"format": {"type": "json_object"}},
         )
 
-    response = call_gemini_with_retry(_call, logs=logs, step_name="스타일 레퍼런스 분석")
-    style_ref = json.loads(response.text)
+    response = call_openai_with_retry(_call, logs=logs, step_name="스타일 레퍼런스 분석")
+    style_ref = parse_json_response(response.output_text)
 
     if cache_key:
         cache_path = STYLE_CACHE_DIR / f"style_analysis_{cache_key}.json"
@@ -522,31 +562,33 @@ def analyze_style_reference(
     return style_ref
 
 
-def analyze_with_gemini(
-    client: genai.Client,
+def analyze_with_openai(
+    client: OpenAI,
     text_excerpt: str,
     image_bytes: bytes,
     image_mime_type: str,
     logs: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     excerpt = text_excerpt[:18000] if text_excerpt else ""
+    content: List[Dict[str, Any]] = [
+        {"type": "input_text", "text": ANALYSIS_PROMPT},
+        {"type": "input_text", "text": "추출 텍스트:\n" + excerpt},
+        {
+            "type": "input_image",
+            "image_url": image_bytes_to_data_url(image_bytes, image_mime_type),
+            "detail": "high",
+        },
+    ]
 
     def _call():
-        return client.models.generate_content(
+        return client.responses.create(
             model=TEXT_MODEL,
-            contents=[
-                ANALYSIS_PROMPT,
-                "추출 텍스트:\n" + excerpt,
-                types.Part.from_bytes(data=image_bytes, mime_type=image_mime_type),
-            ],
-            config=types.GenerateContentConfig(
-                temperature=0.2,
-                response_mime_type="application/json",
-            ),
+            input=[{"role": "user", "content": content}],
+            text={"format": {"type": "json_object"}},
         )
 
-    response = call_gemini_with_retry(_call, logs=logs, step_name="기술 내용 분석")
-    return json.loads(response.text)
+    response = call_openai_with_retry(_call, logs=logs, step_name="기술 내용 분석")
+    return parse_json_response(response.output_text)
 
 
 def get_field_typography_instruction(field_group: str, style_ref: Dict[str, Any]) -> str:
@@ -908,41 +950,21 @@ The final result must look like a new technology banner generated in the same vi
 # =========================================================
 # 이미지 생성
 # =========================================================
-def extract_image_bytes_from_response(response) -> bytes:
-    if hasattr(response, "candidates") and response.candidates:
-        for cand in response.candidates:
-            content = getattr(cand, "content", None)
-            if not content:
-                continue
-            for part in getattr(content, "parts", None) or []:
-                inline_data = getattr(part, "inline_data", None)
-                if inline_data and getattr(inline_data, "data", None):
-                    return inline_data.data
-    if hasattr(response, "parts"):
-        for part in response.parts:
-            inline_data = getattr(part, "inline_data", None)
-            if inline_data and getattr(inline_data, "data", None):
-                return inline_data.data
-    raise RuntimeError("응답에서 이미지 바이트를 찾지 못했습니다.")
-
-
-def generate_final_banner(client: genai.Client, prompt: str, logs: Optional[List[str]] = None) -> bytes:
+def generate_final_banner(client: OpenAI, prompt: str, logs: Optional[List[str]] = None) -> bytes:
     def _call():
-        return client.models.generate_content(
+        return client.images.generate(
             model=IMAGE_MODEL,
-            contents=[prompt],
-            config=types.GenerateContentConfig(
-                image_config=types.ImageConfig(
-                    aspect_ratio="16:9",
-                    image_size=IMAGE_SIZE,
-                ),
-            ),
+            prompt=prompt,
+            size=IMAGE_SIZE,
+            quality=IMAGE_QUALITY,
         )
 
-    response = call_gemini_with_retry(_call, logs=logs, step_name="최종 배너 생성")
-    image_bytes = extract_image_bytes_from_response(response)
+    response = call_openai_with_retry(_call, logs=logs, step_name="최종 배너 생성")
+    if not response.data or not response.data[0].b64_json:
+        raise RuntimeError("OpenAI 이미지 응답에서 base64 이미지 데이터를 찾지 못했습니다.")
+    image_bytes = base64.b64decode(response.data[0].b64_json)
     if logs is not None:
-        log_step(logs, f"최종 배너 생성 성공: {IMAGE_MODEL} / {IMAGE_SIZE}")
+        log_step(logs, f"최종 배너 생성 성공: {IMAGE_MODEL} / {IMAGE_SIZE} / quality={IMAGE_QUALITY}")
     return image_bytes
 
 
@@ -968,7 +990,7 @@ def process_smk_paths(
         log_step(logs, "앱 시작")
         ensure_dir(OUTPUT_CACHE_DIR)
         client = get_client(api_key=api_key)
-        log_step(logs, "Gemini 클라이언트 초기화 완료")
+        log_step(logs, "OpenAI 클라이언트 초기화 완료")
 
         text, image_bytes, image_mime_type, original_name = prepare_input(input_path)
         log_step(logs, f"입력 파일 준비 완료: {original_name}")
@@ -982,7 +1004,9 @@ def process_smk_paths(
         style_image_paths: List[str] = []
 
         if resolved_style_zip:
-            style_cache_key = sha256_of_file(resolved_style_zip)[:24]
+            style_cache_key = hashlib.sha256(
+                f"{sha256_of_file(resolved_style_zip)}:{TEXT_MODEL}:openai-v1".encode("utf-8")
+            ).hexdigest()[:24]
             extracted_style_dir = extract_zip_to_temp(resolved_style_zip, logs)
             style_image_paths = collect_image_paths(extracted_style_dir, MAX_STYLE_IMAGES)
             log_step(logs, f"스타일 이미지 수집 완료: {len(style_image_paths)}장")
@@ -996,7 +1020,7 @@ def process_smk_paths(
             )
             log_step(logs, "스타일 레퍼런스 분석 완료")
 
-        raw_data = analyze_with_gemini(
+        raw_data = analyze_with_openai(
             client=client,
             text_excerpt=text,
             image_bytes=image_bytes,
@@ -1068,7 +1092,7 @@ def process_smk_paths(
         friendly_msg = ""
         if "503" in str(e) or "UNAVAILABLE" in str(e):
             friendly_msg = (
-                "Gemini 서버가 일시적으로 혼잡한 상태입니다. 코드 문제보다는 외부 API 과부하 가능성이 큽니다.\n\n"
+                "OpenAI API가 일시적으로 혼잡한 상태입니다. 코드 문제보다는 외부 API 과부하 가능성이 큽니다.\n\n"
             )
         return {
             "success": False,
