@@ -40,6 +40,9 @@ MAX_STYLE_IMAGES = int(os.getenv("MAX_STYLE_IMAGES", "6"))
 MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI = int(
     os.getenv("MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI", "4")
 )
+MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION = int(
+    os.getenv("MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION", "4")
+)
 
 APP_DIR = Path(__file__).resolve().parent
 LOCAL_CACHE_DIR = APP_DIR / ".cache"
@@ -372,6 +375,36 @@ def pick_style_images_for_openai(image_paths: List[str], max_count: int = MAX_ST
         idx = min(int(round(i * step)), len(image_paths) - 1)
         sampled.append(image_paths[idx])
     return list(dict.fromkeys(sampled))
+
+
+def pick_style_images_for_generation(
+    image_paths: List[str],
+    max_count: int = MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION,
+) -> List[str]:
+    if len(image_paths) <= max_count:
+        return image_paths
+
+    # 앞/중간/뒤가 고르게 섞이도록 간격 샘플링하여 direct reference 품질을 안정화한다.
+    step = len(image_paths) / max_count
+    sampled = []
+    for i in range(max_count):
+        idx = min(int(round(i * step)), len(image_paths) - 1)
+        sampled.append(image_paths[idx])
+    return list(dict.fromkeys(sampled))
+
+
+def prepare_image_file_for_openai(path: str) -> Tuple[io.BufferedReader, Optional[str]]:
+    suffix = Path(path).suffix.lower()
+    mime_type = mime_from_path(path)
+
+    if suffix == ".bmp" or mime_type == "image/bmp":
+        with Image.open(path) as img:
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            tmp.close()
+            img.convert("RGB").save(tmp.name, format="PNG")
+        return open(tmp.name, "rb"), tmp.name
+
+    return open(path, "rb"), None
 
 
 STYLE_ANALYSIS_PROMPT = """
@@ -779,6 +812,12 @@ Create a 16:9 wide horizontal Korean university technology banner.
 This image must follow the Busan National University Tech Brief-style reference pattern.
 It must NOT look like a detailed infographic, poster, brochure, teaching slide, or explanatory diagram.
 
+[Direct Reference Image Rule]
+- Direct reference images from the style ZIP may be provided together with this prompt
+- Use those reference images as visual grounding for layout family, collage rhythm, label treatment, color balance, keyword styling, and overall template feel
+- Do NOT copy the specific subject matter from the reference images unless it is part of the common template structure
+- Preserve the template family from the reference images while replacing the subject matter with the uploaded technology content
+
 [Primary Goal]
 - Recreate the overall visual template pattern of the reference images
 - Replicate the same university label system found in the reference images
@@ -950,21 +989,70 @@ The final result must look like a new technology banner generated in the same vi
 # =========================================================
 # 이미지 생성
 # =========================================================
-def generate_final_banner(client: OpenAI, prompt: str, logs: Optional[List[str]] = None) -> bytes:
-    def _call():
-        return client.images.generate(
-            model=IMAGE_MODEL,
-            prompt=prompt,
-            size=IMAGE_SIZE,
-            quality=IMAGE_QUALITY,
-        )
+def generate_final_banner(
+    client: OpenAI,
+    prompt: str,
+    style_reference_image_paths: Optional[List[str]] = None,
+    logs: Optional[List[str]] = None,
+) -> bytes:
+    style_reference_image_paths = [p for p in (style_reference_image_paths or []) if p]
 
-    response = call_openai_with_retry(_call, logs=logs, step_name="최종 배너 생성")
+    if style_reference_image_paths:
+        file_handles: List[io.BufferedReader] = []
+        temp_paths: List[str] = []
+        try:
+            for image_path in style_reference_image_paths:
+                file_handle, temp_path = prepare_image_file_for_openai(image_path)
+                file_handles.append(file_handle)
+                if temp_path:
+                    temp_paths.append(temp_path)
+
+            def _call():
+                return client.images.edit(
+                    model=IMAGE_MODEL,
+                    image=file_handles,
+                    prompt=prompt,
+                    size=IMAGE_SIZE,
+                    quality=IMAGE_QUALITY,
+                )
+
+            response = call_openai_with_retry(
+                _call,
+                logs=logs,
+                step_name="최종 배너 생성 (gpt-image-2 direct reference)",
+            )
+            mode_desc = f"edit/direct-reference {len(style_reference_image_paths)}장"
+        finally:
+            for fh in file_handles:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+            for temp_path in temp_paths:
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+    else:
+        def _call():
+            return client.images.generate(
+                model=IMAGE_MODEL,
+                prompt=prompt,
+                size=IMAGE_SIZE,
+                quality=IMAGE_QUALITY,
+            )
+
+        response = call_openai_with_retry(_call, logs=logs, step_name="최종 배너 생성")
+        mode_desc = "generate/text-only"
+
     if not response.data or not response.data[0].b64_json:
         raise RuntimeError("OpenAI 이미지 응답에서 base64 이미지 데이터를 찾지 못했습니다.")
     image_bytes = base64.b64decode(response.data[0].b64_json)
     if logs is not None:
-        log_step(logs, f"최종 배너 생성 성공: {IMAGE_MODEL} / {IMAGE_SIZE} / quality={IMAGE_QUALITY}")
+        log_step(
+            logs,
+            f"최종 배너 생성 성공: {IMAGE_MODEL} / {IMAGE_SIZE} / quality={IMAGE_QUALITY} / mode={mode_desc}",
+        )
     return image_bytes
 
 
@@ -1002,6 +1090,7 @@ def process_smk_paths(
         style_ref: Dict[str, Any] = {}
         style_cache_key = None
         style_image_paths: List[str] = []
+        style_reference_image_paths: List[str] = []
 
         if resolved_style_zip:
             style_cache_key = hashlib.sha256(
@@ -1012,6 +1101,8 @@ def process_smk_paths(
             log_step(logs, f"스타일 이미지 수집 완료: {len(style_image_paths)}장")
             if not style_image_paths:
                 raise ValueError("스타일 ZIP 안에서 이미지 파일을 찾지 못했습니다.")
+            style_reference_image_paths = pick_style_images_for_generation(style_image_paths)
+            log_step(logs, f"gpt-image-2 direct reference용 대표 이미지 선별 완료: {len(style_reference_image_paths)}장")
             style_ref = analyze_style_reference(
                 client=client,
                 style_image_paths=style_image_paths,
@@ -1034,7 +1125,12 @@ def process_smk_paths(
         final_prompt = build_full_banner_prompt(data, style_ref)
         log_step(logs, "최종 배너 프롬프트 생성 완료")
 
-        final_img_bytes = generate_final_banner(client, final_prompt, logs)
+        final_img_bytes = generate_final_banner(
+            client,
+            final_prompt,
+            style_reference_image_paths=style_reference_image_paths,
+            logs=logs,
+        )
         log_step(logs, f"최종 배너 이미지 바이트 생성 완료: {len(final_img_bytes)} bytes")
 
         title_part = safe_filename(data.get("technology_name", "banner"))
@@ -1066,6 +1162,7 @@ def process_smk_paths(
             f"- 세부분야: {data.get('field_type', '')}\n"
             f"- 키워드: {', '.join(data.get('keywords', []))}\n"
             f"- 스타일 이미지 수: {len(style_image_paths)}\n"
+            f"- gpt-image-2 direct reference 이미지 수: {len(style_reference_image_paths)}\n"
             f"- 기본 스타일 ZIP 자동 사용: {'예' if style_zip_path is None else '아니오(업로드 ZIP 사용)'}\n\n"
             f"[실행 로그]\n" + "\n".join(logs)
         )
