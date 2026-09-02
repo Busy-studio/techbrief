@@ -2,11 +2,7 @@ import os
 
 import streamlit as st
 
-from banner_core import (
-    IMAGE_QUALITY,
-    IMAGE_SIZE,
-    process_smk_streamlit,
-)
+from banner_core import process_smk_streamlit
 
 
 st.set_page_config(page_title="Tech Brief 이미지 생성기", layout="wide")
@@ -27,23 +23,45 @@ st.caption("SMK PDF를 업로드하면 부산대학교 Tech Brief 스타일 배�
 
 with st.sidebar:
     st.subheader("실행 설정")
-    size_options = ["1280x720", "1536x1024", "2048x1152"]
+
+    PRESETS = {
+        "빠른 시안": {"size": "1280x720", "quality": "medium"},
+        "표준": {"size": "1536x864", "quality": "medium"},
+        "최종 고품질": {"size": "2048x1152", "quality": "high"},
+    }
+    size_options = ["1280x720", "1536x864", "2048x1152"]
     quality_options = ["medium", "high"]
 
-    default_size_index = size_options.index(IMAGE_SIZE) if IMAGE_SIZE in size_options else size_options.index("2048x1152")
-    default_quality_index = quality_options.index(IMAGE_QUALITY) if IMAGE_QUALITY in quality_options else quality_options.index("high")
+    if "render_preset" not in st.session_state:
+        st.session_state.render_preset = "빠른 시안"
+    if "selected_image_size" not in st.session_state:
+        st.session_state.selected_image_size = PRESETS[st.session_state.render_preset]["size"]
+    if "selected_image_quality" not in st.session_state:
+        st.session_state.selected_image_quality = PRESETS[st.session_state.render_preset]["quality"]
 
+    def apply_render_preset() -> None:
+        preset = PRESETS[st.session_state.render_preset]
+        st.session_state.selected_image_size = preset["size"]
+        st.session_state.selected_image_quality = preset["quality"]
+
+    st.selectbox(
+        "생성 프리셋",
+        options=list(PRESETS.keys()),
+        key="render_preset",
+        on_change=apply_render_preset,
+    )
+    st.caption("프리셋을 불러온 뒤 이미지 크기와 품질은 아래에서 개별 조정할 수 있습니다.")
     selected_image_size = st.selectbox(
         "이미지 크기",
         options=size_options,
-        index=default_size_index,
-        help="크기가 클수록 보통 더 오래 걸립니다.",
+        key="selected_image_size",
+        help="모든 선택지는 16:9 비율입니다.",
     )
     selected_image_quality = st.selectbox(
         "이미지 품질",
         options=quality_options,
-        index=default_quality_index,
-        help="high가 더 느릴 수 있습니다.",
+        key="selected_image_quality",
+        help="medium은 시안/표준용, high는 최종본용입니다.",
     )
 
 col1, col2 = st.columns([1, 1])

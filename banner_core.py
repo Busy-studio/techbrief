@@ -714,10 +714,17 @@ def build_full_banner_prompt(data: Dict[str, Any], style_ref: Dict[str, Any]) ->
     keyword_typography = style_ref.get("keyword_typography", {}) if style_ref else {}
     label_component = style_ref.get("university_label_component", {}) if style_ref else {}
     style_dont = style_ref.get("do_not_do", []) if style_ref else []
+    strict_default_style = style_ref.get("profile") == "pnu_default_strict_photo_montage_v2"
 
     typography_instruction = get_field_typography_instruction(field_group, style_ref)
 
-    if len(keywords) == 0:
+    if strict_default_style:
+        text_instruction = (
+            "Do not render any large main keyword, slogan, technology title, component label, "
+            "callout text, annotation, arrow label, or explanatory text. "
+            "The only required text in the image is the Busan National University label and the department/professor line."
+        )
+    elif len(keywords) == 0:
         text_instruction = "Do not place extra keyword text in the main visual area."
     elif len(keywords) == 1:
         text_instruction = f'Place exactly one short Korean keyword only: "{keywords[0]}"'
@@ -726,6 +733,27 @@ def build_full_banner_prompt(data: Dict[str, Any], style_ref: Dict[str, Any]) ->
     else:
         joined = " / ".join([f'"{k}"' for k in keywords])
         text_instruction = f"Place exactly these 3 different short Korean keywords and no others: {joined}"
+
+    default_reference_fidelity_block = ""
+    if strict_default_style:
+        default_reference_fidelity_block = """
+[STRICT DEFAULT PNU TECH BRIEF PHOTO-MONTAGE FIDELITY]
+- Match the supplied default reference images more literally than a generic futuristic technology poster
+- Build the banner primarily from 2 to 3 broad photorealistic scenes or real-world technology subjects
+- Let each photographic scene occupy a large portion of the canvas; do not fill the canvas with many small gadgets
+- Blend the scenes softly with photographic crossfades, opacity gradients, shared lighting, and overlapping depth
+- The final image should resemble professional photo compositing, not a newly designed CGI product advertisement
+- Prefer recognizable real equipment, materials, laboratories, industrial environments, devices, or application scenes
+- Do not invent a transparent central 3D specimen, exploded view, cutaway model, schematic block, or hero product render unless the source technology itself is literally such a visible object
+- Do not add component callouts, leader lines, arrows, measurement labels, structure labels, or explanatory annotations
+- Do not add large Korean keywords, slogans, titles, or glowing headline typography
+- The only required text is the small university label and the department/professor line
+- Digital overlays may appear only as subtle secondary atmosphere when truly relevant; keep the underlying photographic subject dominant
+- Avoid game-key-art styling, cyberpunk neon, excessive light trails, laser beams, glowing outlines, hologram panels, and exaggerated HDR
+- Preserve realistic materials, plausible lighting, and ordinary photographic texture
+- Do not force a blue palette over every technology; preserve believable subject colors and use color grading only to unify the montage
+- Use the top-left or top-right negative-space area for the university label, whichever interferes least with the photographic subjects
+""".strip()
 
     style_constraint_block = f"""
 [CRITICAL TEMPLATE REPLICATION RULE - MUST FOLLOW STRICTLY]
@@ -799,25 +827,12 @@ You MUST replicate the same banner design family used in the reference images.
 - Do NOT simplify it into plain text only
 - The result must look like it came from the same original template family as the reference images
 
-[Keyword Typography System]
-- Keywords are major visual text elements, not explanatory captions
-- Use only 1 to 3 short Korean keywords maximum
-- Prefer only 1 or 2 keywords for cleaner composition
-- Use 3 keywords only when necessary
-- Never place long explanations
-- Never repeat the same keyword
-- Never add extra keyword text beyond the requested set
-- Each keyword must appear only once in the entire image
-- Never duplicate the same keyword in any position
-- Do not render the same word twice, even for emphasis, shadow, echo, or layout balance
-- If a keyword is placed once, it must not appear again anywhere else in the image
-- Avoid duplicated Korean text caused by stylized text rendering
-
-[Keyword Placement Rules]
-- Place keywords near the main focal subject
-- Do not scatter them randomly
-- Avoid busy backgrounds
-- Keep strong hierarchy and immediate readability
+[Text Restraint System]
+- Follow the text policy extracted from the reference style
+- If the reference style uses no main keywords, do not invent any
+- Do not turn metadata keywords into headline text unless the reference style explicitly requires that behavior
+- Never add long explanations, fake labels, or repeated text
+- Do not duplicate Korean text for emphasis, shadow, echo, or layout balance
 
 [Global Image Rules]
 - Do NOT create infographic layout
@@ -830,6 +845,8 @@ You MUST replicate the same banner design family used in the reference images.
     prompt = f"""
 {style_constraint_block}
 
+{default_reference_fidelity_block}
+
 Create a 16:9 wide horizontal Korean university technology banner.
 
 This image must follow the Busan National University Tech Brief-style reference pattern.
@@ -837,7 +854,7 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 
 [Direct Reference Image Rule]
 - Direct reference images from the style ZIP may be provided together with this prompt
-- Use those reference images as visual grounding for layout family, collage rhythm, label treatment, color balance, keyword styling, and overall template feel
+- Use those reference images as visual grounding for layout family, collage rhythm, label treatment, color balance, photographic blending, and overall template feel
 - Do NOT copy the specific subject matter from the reference images unless it is part of the common template structure
 - Preserve the template family from the reference images while replacing the subject matter with the uploaded technology content
 
@@ -913,14 +930,14 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - keyword usage: {text_policy.get('keyword_usage', '')}
 - keyword readability: {text_policy.get('keyword_readability', '')}
 
-[Keyword Typography Rules]
+[Keyword / Main Text Rules]
 - reference keyword base style: {keyword_typography.get('base_style', '')}
 - reference keyword weight: {keyword_typography.get('weight', '')}
 - reference keyword integration: {keyword_typography.get('integration', '')}
 - domain-specific typography instruction: {typography_instruction}
-- text size must be large and dominant
-- avoid default flat caption-style text
-- text should feel integrated with lighting or depth
+- follow the reference text amount exactly
+- never make keyword text large or dominant when the reference style does not do so
+- never invent labels merely because the source technology contains named layers or components
 
 [University Label System - Reference Replication]
 - replicate the same university label structure from the reference images
@@ -938,7 +955,7 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - professor phrase style: accent-colored full phrase including \"교수\"
 - subtitle color difference: department and full professor phrase must differ in color
 - spacing: tight clean spacing between box and subtitle
-- placement behavior: near upper-right area, matching the reference examples
+- placement behavior: {label_component.get('placement_behavior', 'near an upper corner with available negative space')}
 - place the university box very close to the top boundary, but keep it fully inside the canvas
 - use only a very small top margin
 - do not let the box overlap or cross the top edge
@@ -974,23 +991,21 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - keep the original background image continuous behind the label component
 - the component should mimic the reference examples as closely as possible
 
-[Main keyword rule]
+[Main Text Rule]
 {text_instruction}
-- Every keyword must be rendered exactly one time only
 
 [Negative instructions]
 - do not add unrelated people unless the technology directly requires them
 - do not add tourist scenery
 - do not add random city night views unless directly relevant
 - do not add random icons, emoji-like graphics, fake dashboards, fake English text, fake numbers
-- avoid infographic boxes, arrows, and educational poster composition
+- avoid infographic boxes, arrows, leader lines, callout labels, part annotations, and educational poster composition
 - avoid white-background infographic boards
 - avoid many explanatory labels across the image
 - prefer large blended photographic scenes over diagrammatic explanation
 - the image should feel like a premium visual key art banner, not a teaching slide
-- use only the requested 1 to 3 short Korean keyword texts
-- do not repeat any keyword
-- do not add extra keyword text beyond the requested set
+- do not invent headline keywords, slogans, component names, or explanatory labels beyond what the active reference style explicitly allows
+- do not repeat any text
 - additional reference do-not-do rules: {', '.join(style_dont) if style_dont else 'none'}
 - content-specific forbidden elements: {', '.join(forbidden) if forbidden else 'none'}
 - do not put department and professor text inside the same rounded box as the university name
@@ -1230,6 +1245,8 @@ def process_smk_paths(
             f"- 스타일 모드: {style_mode}\n"
             f"- 스타일 이미지 수: {len(style_image_paths)}\n"
             f"- gpt-image-2 direct reference 이미지 수: {len(style_reference_image_paths)}\n"
+            f"- 이미지 크기: {image_size}\n"
+            f"- 이미지 품질: {image_quality}\n"
             f"- 기본 스타일 Luna 분석: {'생략(내장 JSON)' if style_mode == 'builtin_default' else '필요 시 실행'}\n"
             f"- 사용자 스타일 ZIP: {'없음' if style_zip_path is None else '사용'}\n\n"
             f"[실행 로그]\n" + "\n".join(logs)
