@@ -691,10 +691,7 @@ def make_display_summary(data: Dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def build_full_banner_prompt(
-    data: Dict[str, Any],
-    style_ref: Dict[str, Any],
-) -> str:
+def build_full_banner_prompt(data: Dict[str, Any], style_ref: Dict[str, Any]) -> str:
     dept = clean_text(data.get("department", ""))
     professor = clean_text(data.get("professor", ""))
     field_group = clean_text(data.get("field_group", "기타")) or "기타"
@@ -717,16 +714,10 @@ def build_full_banner_prompt(
     keyword_typography = style_ref.get("keyword_typography", {}) if style_ref else {}
     label_component = style_ref.get("university_label_component", {}) if style_ref else {}
     style_dont = style_ref.get("do_not_do", []) if style_ref else []
-    strict_default_style = style_ref.get("profile") == "pnu_default_strict_photo_montage_v2"
 
     typography_instruction = get_field_typography_instruction(field_group, style_ref)
-    if strict_default_style and len(keywords) == 0:
-        text_instruction = (
-            "Do not add extra main keyword text when no concise keyword was extracted. "
-            "Only keep the Busan National University label and the department/professor line. "
-            "Still do not add component labels, callouts, titles, or explanatory text."
-        )
-    elif len(keywords) == 0:
+
+    if len(keywords) == 0:
         text_instruction = "Do not place extra keyword text in the main visual area."
     elif len(keywords) == 1:
         text_instruction = f'Place exactly one short Korean keyword only: "{keywords[0]}"'
@@ -735,21 +726,6 @@ def build_full_banner_prompt(
     else:
         joined = " / ".join([f'"{k}"' for k in keywords])
         text_instruction = f"Place exactly these 3 different short Korean keywords and no others: {joined}"
-
-    default_reference_fidelity_block = ""
-    if strict_default_style:
-        default_reference_fidelity_block = """
-[DEFAULT PNU TECH BRIEF STYLE GUIDANCE]
-- Stay close to the supplied default reference images, but do not over-engineer the layout
-- Prefer a strong, visually coherent technology key visual rather than a rigidly structured poster
-- Use photorealistic technology imagery with soft blended compositing and clear focal hierarchy
-- Avoid explanatory callouts, arrows, leader lines, measurement labels, and part annotations
-- Allow 1 to 3 short Korean technology keywords when provided by the analysis
-- Those keywords may be visually noticeable, but should still feel like part of the design rather than a giant poster headline
-- Keep the university label as a small identifying element, not the main focus
-- Avoid clutter, too many tiny gadgets, or a busy equipment catalog look
-- Keep science-fiction glow, laser, and cyber effects restrained unless they are essential to the technology concept
-""".strip()
 
     style_constraint_block = f"""
 [CRITICAL TEMPLATE REPLICATION RULE - MUST FOLLOW STRICTLY]
@@ -823,12 +799,25 @@ You MUST replicate the same banner design family used in the reference images.
 - Do NOT simplify it into plain text only
 - The result must look like it came from the same original template family as the reference images
 
-[Text Restraint System]
-- Follow the text policy extracted from the reference style
-- For the default PNU style, allow 1 to 3 short Korean technology keywords from the analysis when available
-- Let the keywords appear naturally as design accents rather than forcing a rigid template position
-- Never add long explanations, fake labels, or repeated text
-- Do not duplicate Korean text for emphasis, shadow, echo, or layout balance
+[Keyword Typography System]
+- Keywords are major visual text elements, not explanatory captions
+- Use only 1 to 3 short Korean keywords maximum
+- Prefer only 1 or 2 keywords for cleaner composition
+- Use 3 keywords only when necessary
+- Never place long explanations
+- Never repeat the same keyword
+- Never add extra keyword text beyond the requested set
+- Each keyword must appear only once in the entire image
+- Never duplicate the same keyword in any position
+- Do not render the same word twice, even for emphasis, shadow, echo, or layout balance
+- If a keyword is placed once, it must not appear again anywhere else in the image
+- Avoid duplicated Korean text caused by stylized text rendering
+
+[Keyword Placement Rules]
+- Place keywords near the main focal subject
+- Do not scatter them randomly
+- Avoid busy backgrounds
+- Keep strong hierarchy and immediate readability
 
 [Global Image Rules]
 - Do NOT create infographic layout
@@ -841,18 +830,10 @@ You MUST replicate the same banner design family used in the reference images.
     prompt = f"""
 {style_constraint_block}
 
-{default_reference_fidelity_block}
-
 Create a 16:9 wide horizontal Korean university technology banner.
 
 This image must follow the Busan National University Tech Brief-style reference pattern.
 It must NOT look like a detailed infographic, poster, brochure, teaching slide, or explanatory diagram.
-
-[Direct Reference Image Rule]
-- Direct reference images from the style ZIP may be provided together with this prompt
-- Use those reference images as visual grounding for layout family, collage rhythm, label treatment, color balance, photographic blending, and overall template feel
-- Do NOT copy the specific subject matter from the reference images unless it is part of the common template structure
-- Preserve the template family from the reference images while replacing the subject matter with the uploaded technology content
 
 [Primary Goal]
 - Recreate the overall visual template pattern of the reference images
@@ -926,18 +907,14 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - keyword usage: {text_policy.get('keyword_usage', '')}
 - keyword readability: {text_policy.get('keyword_readability', '')}
 
-[Keyword / Main Text Rules]
+[Keyword Typography Rules]
 - reference keyword base style: {keyword_typography.get('base_style', '')}
 - reference keyword weight: {keyword_typography.get('weight', '')}
 - reference keyword integration: {keyword_typography.get('integration', '')}
 - domain-specific typography instruction: {typography_instruction}
-- use at most 1 to 3 short Korean keywords only, when extracted from the technology analysis
-- render the keywords in a clean bold Korean sans-serif style
-- let the model decide the most natural placement based on the composition, while keeping the keywords readable and visually balanced
-- keywords should support the image, not overpower it
-- avoid turning the keywords into one giant poster headline or a rigid bottom menu bar
-- a soft glow or contrast edge is allowed only enough for legibility
-- never invent labels merely because the source technology contains named layers or components
+- text size must be large and dominant
+- avoid default flat caption-style text
+- text should feel integrated with lighting or depth
 
 [University Label System - Reference Replication]
 - replicate the same university label structure from the reference images
@@ -955,7 +932,7 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - professor phrase style: accent-colored full phrase including \"교수\"
 - subtitle color difference: department and full professor phrase must differ in color
 - spacing: tight clean spacing between box and subtitle
-- placement behavior: {label_component.get('placement_behavior', 'near an upper corner with available negative space')}
+- placement behavior: near upper-right area, matching the reference examples
 - place the university box very close to the top boundary, but keep it fully inside the canvas
 - use only a very small top margin
 - do not let the box overlap or cross the top edge
@@ -991,23 +968,23 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - keep the original background image continuous behind the label component
 - the component should mimic the reference examples as closely as possible
 
-[Main Text Rule]
+[Main keyword rule]
 {text_instruction}
+- Every keyword must be rendered exactly one time only
 
 [Negative instructions]
 - do not add unrelated people unless the technology directly requires them
 - do not add tourist scenery
 - do not add random city night views unless directly relevant
 - do not add random icons, emoji-like graphics, fake dashboards, fake English text, fake numbers
-- avoid infographic boxes, arrows, leader lines, callout labels, part annotations, and educational poster composition
+- avoid infographic boxes, arrows, and educational poster composition
 - avoid white-background infographic boards
 - avoid many explanatory labels across the image
 - prefer large blended photographic scenes over diagrammatic explanation
 - the image should feel like a premium visual key art banner, not a teaching slide
-- do not invent extra slogans, component names, or explanatory labels beyond the extracted short technology keywords
-- do not convert the short technology keywords into a single giant headline block
-- do not arrange the keywords like a bottom navigation bar, tab menu, or evenly spaced interface labels
-- do not repeat any text
+- use only the requested 1 to 3 short Korean keyword texts
+- do not repeat any keyword
+- do not add extra keyword text beyond the requested set
 - additional reference do-not-do rules: {', '.join(style_dont) if style_dont else 'none'}
 - content-specific forbidden elements: {', '.join(forbidden) if forbidden else 'none'}
 - do not put department and professor text inside the same rounded box as the university name
@@ -1143,11 +1120,10 @@ def process_smk_paths(
         if style_zip_path is None:
             try:
                 style_ref, style_image_paths = load_builtin_default_style(logs)
-                style_reference_image_paths = pick_style_images_for_generation(style_image_paths)
-                log_step(
-                    logs,
-                    f"gpt-image-2 direct reference용 내장 대표 이미지 준비 완료: {len(style_reference_image_paths)}장",
-                )
+                # 기본 스타일은 원래 Gemini 생성 흐름과 동일하게:
+                # 사전 분석된 style_ref만 최종 프롬프트에 사용하고 이미지 레퍼런스는 직접 전달하지 않는다.
+                style_reference_image_paths = []
+                log_step(logs, "기본 스타일: Gemini 호환 prompt-only 스타일 모드 (direct reference 미사용)")
             except Exception as builtin_error:
                 # 배포 누락 등 예외 상황에서만 기존 Drive ZIP 방식으로 복구한다.
                 log_step(logs, f"내장 기본 스타일 로드 실패, 레거시 ZIP 폴백: {builtin_error}")
@@ -1162,7 +1138,8 @@ def process_smk_paths(
                 style_image_paths = collect_image_paths(extracted_style_dir, MAX_STYLE_IMAGES)
                 if not style_image_paths:
                     raise ValueError("기본 스타일 ZIP 안에서 이미지 파일을 찾지 못했습니다.")
-                style_reference_image_paths = pick_style_images_for_generation(style_image_paths)
+                style_reference_image_paths = []
+                log_step(logs, "기본 스타일 레거시 ZIP 폴백: style 분석만 사용, direct reference 미사용")
                 style_ref = analyze_style_reference(
                     client=client,
                     style_image_paths=style_image_paths,
@@ -1249,6 +1226,7 @@ def process_smk_paths(
             f"- 키워드: {', '.join(data.get('keywords', []))}\n"
             f"- 스타일 모드: {style_mode}\n"
             f"- 스타일 이미지 수: {len(style_image_paths)}\n"
+            f"- 스타일 생성 모드: {'Gemini 호환 prompt-only 기본 스타일' if style_zip_path is None else '사용자 ZIP direct reference'}\n"
             f"- gpt-image-2 direct reference 이미지 수: {len(style_reference_image_paths)}\n"
             f"- 이미지 크기: {image_size}\n"
             f"- 이미지 품질: {image_quality}\n"
