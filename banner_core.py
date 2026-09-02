@@ -691,67 +691,9 @@ def make_display_summary(data: Dict[str, Any]) -> str:
     return " ".join(parts)
 
 
-def get_canvas_text_layout_instruction(image_size: str, keyword_count: int) -> str:
-    size = clean_text(image_size or IMAGE_SIZE) or IMAGE_SIZE
-    try:
-        width_s, height_s = size.lower().split("x", 1)
-        width = int(width_s)
-        height = int(height_s)
-    except Exception:
-        width, height = 2048, 1152
-        size = f"{width}x{height}"
-
-    # 절대 픽셀값이 아니라 캔버스 대비 비율을 중심으로 지시하여
-    # 해상도 변경 시에도 같은 시각적 비례를 유지한다.
-    if width <= 1280:
-        preset_note = "compact canvas: keep text especially restrained and preserve more breathing room"
-        keyword_height = "about 5% to 6.5% of canvas height"
-        label_width = "about 15% to 17% of canvas width"
-        outer_margin = "about 2.0% to 2.8% of canvas width/height"
-    elif width <= 1600:
-        preset_note = "standard canvas: maintain balanced text-to-image proportions"
-        keyword_height = "about 4.8% to 6.2% of canvas height"
-        label_width = "about 14% to 16.5% of canvas width"
-        outer_margin = "about 2.0% to 2.6% of canvas width/height"
-    else:
-        preset_note = "large final canvas: do not enlarge text merely because more pixels are available"
-        keyword_height = "about 4.5% to 6.0% of canvas height"
-        label_width = "about 13.5% to 16% of canvas width"
-        outer_margin = "about 1.8% to 2.5% of canvas width/height"
-
-    if keyword_count <= 0:
-        keyword_layout = "No technology keyword text is required."
-    elif keyword_count == 1:
-        keyword_layout = "Use one keyword group only, occupying one clean open area; do not center it like a movie title."
-    elif keyword_count == 2:
-        keyword_layout = "Use two separated keyword groups with balanced visual weight; do not stack them into one oversized title block."
-    else:
-        keyword_layout = "Use three keyword groups at most, distributed across available negative space with clear separation and no crowding."
-
-    return f"""
-[CANVAS-AWARE TEXT SCALE AND POSITION - CRITICAL]
-- Target output canvas: {size} pixels, 16:9
-- {preset_note}
-- Scale all text by VISUAL PROPORTION of the canvas, not by fixed absolute pixel assumptions
-- University rounded box target width: {label_width}
-- University box outer top/side margin: {outer_margin}
-- Department/professor subtitle should be about 45% to 55% of the visual height of the university-name text
-- Technology keyword character height should generally stay around {keyword_height}
-- Technology keywords must remain secondary to the photographic subjects and must not consume a large continuous area of the image
-- Keep at least roughly 2% of canvas width between text groups and important subject edges whenever possible
-- Keep text away from crop-sensitive outer edges and avoid touching the canvas border
-- Prefer negative-space placement instead of covering faces, devices, focal equipment, or the primary technology object
-- If the composition is busy, REDUCE keyword size before reducing photographic subject clarity
-- Never increase text size simply because the selected output resolution is larger
-- Preserve nearly the same perceived text/image proportion across 1280x720, 1536x864, and 2048x1152 outputs
-- {keyword_layout}
-""".strip()
-
-
 def build_full_banner_prompt(
     data: Dict[str, Any],
     style_ref: Dict[str, Any],
-    image_size: Optional[str] = None,
 ) -> str:
     dept = clean_text(data.get("department", ""))
     professor = clean_text(data.get("professor", ""))
@@ -778,10 +720,6 @@ def build_full_banner_prompt(
     strict_default_style = style_ref.get("profile") == "pnu_default_strict_photo_montage_v2"
 
     typography_instruction = get_field_typography_instruction(field_group, style_ref)
-    canvas_text_layout_instruction = get_canvas_text_layout_instruction(
-        image_size or IMAGE_SIZE, len(keywords)
-    )
-
     if strict_default_style and len(keywords) == 0:
         text_instruction = (
             "Do not add extra main keyword text when no concise keyword was extracted. "
@@ -801,24 +739,16 @@ def build_full_banner_prompt(
     default_reference_fidelity_block = ""
     if strict_default_style:
         default_reference_fidelity_block = """
-[STRICT DEFAULT PNU TECH BRIEF PHOTO-MONTAGE FIDELITY]
-- Match the supplied default reference images more literally than a generic futuristic technology poster
-- Build the banner primarily from 2 to 3 broad photorealistic scenes or real-world technology subjects
-- Let each photographic scene occupy a large portion of the canvas; do not fill the canvas with many small gadgets
-- Blend the scenes softly with photographic crossfades, opacity gradients, shared lighting, and overlapping depth
-- The final image should resemble professional photo compositing, not a newly designed CGI product advertisement
-- Prefer recognizable real equipment, materials, laboratories, industrial environments, devices, or application scenes
-- Do not invent a transparent central 3D specimen, exploded view, cutaway model, schematic block, or hero product render unless the source technology itself is literally such a visible object
-- Do not add component callouts, leader lines, arrows, measurement labels, structure labels, or explanatory annotations
-- Allow 1 to 3 short Korean technology keywords when they are provided by the uploaded technology analysis
-- Those keywords should be noticeable but secondary to the photographic subjects: medium-size, clean, bold, and integrated into open space
-- Do not make the keywords oversized, poster-like, or the dominant headline of the entire banner
-- Keep the university label plus department/professor line as the constant identifier, and treat the technology keywords as supporting visual text
-- Digital overlays may appear only as subtle secondary atmosphere when truly relevant; keep the underlying photographic subject dominant
-- Avoid game-key-art styling, cyberpunk neon, excessive light trails, laser beams, glowing outlines, hologram panels, and exaggerated HDR
-- Preserve realistic materials, plausible lighting, and ordinary photographic texture
-- Do not force a blue palette over every technology; preserve believable subject colors and use color grading only to unify the montage
-- Use the top-left or top-right negative-space area for the university label, whichever interferes least with the photographic subjects
+[DEFAULT PNU TECH BRIEF STYLE GUIDANCE]
+- Stay close to the supplied default reference images, but do not over-engineer the layout
+- Prefer a strong, visually coherent technology key visual rather than a rigidly structured poster
+- Use photorealistic technology imagery with soft blended compositing and clear focal hierarchy
+- Avoid explanatory callouts, arrows, leader lines, measurement labels, and part annotations
+- Allow 1 to 3 short Korean technology keywords when provided by the analysis
+- Those keywords may be visually noticeable, but should still feel like part of the design rather than a giant poster headline
+- Keep the university label as a small identifying element, not the main focus
+- Avoid clutter, too many tiny gadgets, or a busy equipment catalog look
+- Keep science-fiction glow, laser, and cyber effects restrained unless they are essential to the technology concept
 """.strip()
 
     style_constraint_block = f"""
@@ -895,8 +825,8 @@ You MUST replicate the same banner design family used in the reference images.
 
 [Text Restraint System]
 - Follow the text policy extracted from the reference style
-- For the default PNU style, use only 1 to 3 short Korean technology keywords from the analysis when available
-- Those keywords are allowed as supporting visual text, but they must not become a giant headline or dominate the full canvas
+- For the default PNU style, allow 1 to 3 short Korean technology keywords from the analysis when available
+- Let the keywords appear naturally as design accents rather than forcing a rigid template position
 - Never add long explanations, fake labels, or repeated text
 - Do not duplicate Korean text for emphasis, shadow, echo, or layout balance
 
@@ -917,8 +847,6 @@ Create a 16:9 wide horizontal Korean university technology banner.
 
 This image must follow the Busan National University Tech Brief-style reference pattern.
 It must NOT look like a detailed infographic, poster, brochure, teaching slide, or explanatory diagram.
-
-{canvas_text_layout_instruction}
 
 [Direct Reference Image Rule]
 - Direct reference images from the style ZIP may be provided together with this prompt
@@ -1004,11 +932,11 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - reference keyword integration: {keyword_typography.get('integration', '')}
 - domain-specific typography instruction: {typography_instruction}
 - use at most 1 to 3 short Korean keywords only, when extracted from the technology analysis
-- render the keywords in a clean bold Korean sans-serif style, visually clear but not oversized
-- keywords should complement the image, not overpower it
-- place the keywords in open negative space, typically lower-left, lower-center, or lower-right, avoiding overlap with the university label
-- keep them medium to moderately large for readability, but smaller and less dominant than a movie-poster headline
-- a soft glow or contrast edge is allowed only enough for legibility; avoid giant neon headline treatment
+- render the keywords in a clean bold Korean sans-serif style
+- let the model decide the most natural placement based on the composition, while keeping the keywords readable and visually balanced
+- keywords should support the image, not overpower it
+- avoid turning the keywords into one giant poster headline or a rigid bottom menu bar
+- a soft glow or contrast edge is allowed only enough for legibility
 - never invent labels merely because the source technology contains named layers or components
 
 [University Label System - Reference Replication]
@@ -1078,6 +1006,7 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - the image should feel like a premium visual key art banner, not a teaching slide
 - do not invent extra slogans, component names, or explanatory labels beyond the extracted short technology keywords
 - do not convert the short technology keywords into a single giant headline block
+- do not arrange the keywords like a bottom navigation bar, tab menu, or evenly spaced interface labels
 - do not repeat any text
 - additional reference do-not-do rules: {', '.join(style_dont) if style_dont else 'none'}
 - content-specific forbidden elements: {', '.join(forbidden) if forbidden else 'none'}
@@ -1277,7 +1206,6 @@ def process_smk_paths(
         final_prompt = build_full_banner_prompt(
             data,
             style_ref,
-            image_size=image_size,
         )
         log_step(logs, "최종 배너 프롬프트 생성 완료")
 
