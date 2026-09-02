@@ -6,6 +6,7 @@ from banner_core import (
     IMAGE_MODEL,
     IMAGE_QUALITY,
     IMAGE_SIZE,
+    MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION,
     TEXT_MODEL,
     process_smk_streamlit,
 )
@@ -33,6 +34,7 @@ with st.sidebar:
     st.write(f"이미지 모델: `{IMAGE_MODEL}`")
     st.write(f"이미지 크기: `{IMAGE_SIZE}`")
     st.write(f"이미지 품질: `{IMAGE_QUALITY}`")
+    st.write(f"Direct reference: `{MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION}장`")
 
 col1, col2 = st.columns([1, 1])
 

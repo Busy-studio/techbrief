@@ -41,10 +41,12 @@ MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI = int(
     os.getenv("MAX_STYLE_ANALYSIS_IMAGES_FOR_OPENAI", "4")
 )
 MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION = int(
-    os.getenv("MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION", "4")
+    os.getenv("MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION", "2")
 )
 
 APP_DIR = Path(__file__).resolve().parent
+DEFAULT_STYLE_REF_JSON_PATH = APP_DIR / "assets" / "default_style_ref.json"
+DEFAULT_STYLE_REFERENCE_DIR = APP_DIR / "assets" / "default_style_refs"
 LOCAL_CACHE_DIR = APP_DIR / ".cache"
 STYLE_CACHE_DIR = LOCAL_CACHE_DIR / "style_cache"
 OUTPUT_CACHE_DIR = LOCAL_CACHE_DIR / "outputs"
@@ -319,6 +321,27 @@ def download_file(url: str, out_path: str) -> None:
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req) as resp, open(out_path, "wb") as f:  # nosec B310
         shutil.copyfileobj(resp, f)
+
+
+def load_builtin_default_style(logs: List[str]) -> Tuple[Dict[str, Any], List[str]]:
+    if not DEFAULT_STYLE_REF_JSON_PATH.exists():
+        raise FileNotFoundError(f"기본 스타일 분석 파일이 없습니다: {DEFAULT_STYLE_REF_JSON_PATH}")
+    if not DEFAULT_STYLE_REFERENCE_DIR.exists():
+        raise FileNotFoundError(f"기본 direct reference 폴더가 없습니다: {DEFAULT_STYLE_REFERENCE_DIR}")
+
+    style_ref = json.loads(DEFAULT_STYLE_REF_JSON_PATH.read_text(encoding="utf-8"))
+    style_image_paths = sorted(
+        str(path)
+        for path in DEFAULT_STYLE_REFERENCE_DIR.iterdir()
+        if path.is_file() and is_image_file(str(path))
+    )
+    if not style_image_paths:
+        raise ValueError("기본 direct reference 이미지가 없습니다.")
+
+    log_step(logs, f"내장 기본 스타일 JSON 사용: {DEFAULT_STYLE_REF_JSON_PATH.name}")
+    log_step(logs, "기본 스타일 Luna 분석 생략: 사전 분석 JSON 사용")
+    log_step(logs, f"내장 기본 direct reference 이미지 사용: {len(style_image_paths)}장")
+    return style_ref, style_image_paths
 
 
 def get_style_zip_path(style_zip_path: Optional[str], logs: List[str]) -> Optional[str]:
@@ -1085,31 +1108,63 @@ def process_smk_paths(
         log_step(logs, f"추출 텍스트 길이: {len(text)}자")
         log_step(logs, f"입력 이미지 MIME: {image_mime_type}")
 
-        resolved_style_zip = get_style_zip_path(style_zip_path, logs)
-
         style_ref: Dict[str, Any] = {}
         style_cache_key = None
         style_image_paths: List[str] = []
         style_reference_image_paths: List[str] = []
+        style_mode = "builtin_default"
 
-        if resolved_style_zip:
+        if style_zip_path is None:
+            try:
+                style_ref, style_image_paths = load_builtin_default_style(logs)
+                style_reference_image_paths = pick_style_images_for_generation(style_image_paths)
+                log_step(
+                    logs,
+                    f"gpt-image-2 direct reference용 내장 대표 이미지 준비 완료: {len(style_reference_image_paths)}장",
+                )
+            except Exception as builtin_error:
+                # 배포 누락 등 예외 상황에서만 기존 Drive ZIP 방식으로 복구한다.
+                log_step(logs, f"내장 기본 스타일 로드 실패, 레거시 ZIP 폴백: {builtin_error}")
+                resolved_style_zip = get_style_zip_path(None, logs)
+                if not resolved_style_zip:
+                    raise
+                style_mode = "legacy_default_zip_fallback"
+                style_cache_key = hashlib.sha256(
+                    f"{sha256_of_file(resolved_style_zip)}:{TEXT_MODEL}:openai-v1".encode("utf-8")
+                ).hexdigest()[:24]
+                extracted_style_dir = extract_zip_to_temp(resolved_style_zip, logs)
+                style_image_paths = collect_image_paths(extracted_style_dir, MAX_STYLE_IMAGES)
+                if not style_image_paths:
+                    raise ValueError("기본 스타일 ZIP 안에서 이미지 파일을 찾지 못했습니다.")
+                style_reference_image_paths = pick_style_images_for_generation(style_image_paths)
+                style_ref = analyze_style_reference(
+                    client=client,
+                    style_image_paths=style_image_paths,
+                    cache_key=style_cache_key,
+                    logs=logs,
+                )
+        else:
+            style_mode = "uploaded_custom"
+            resolved_style_zip = get_style_zip_path(style_zip_path, logs)
+            if not resolved_style_zip:
+                raise ValueError("업로드 스타일 ZIP을 사용할 수 없습니다.")
             style_cache_key = hashlib.sha256(
                 f"{sha256_of_file(resolved_style_zip)}:{TEXT_MODEL}:openai-v1".encode("utf-8")
             ).hexdigest()[:24]
             extracted_style_dir = extract_zip_to_temp(resolved_style_zip, logs)
             style_image_paths = collect_image_paths(extracted_style_dir, MAX_STYLE_IMAGES)
-            log_step(logs, f"스타일 이미지 수집 완료: {len(style_image_paths)}장")
+            log_step(logs, f"사용자 스타일 이미지 수집 완료: {len(style_image_paths)}장")
             if not style_image_paths:
-                raise ValueError("스타일 ZIP 안에서 이미지 파일을 찾지 못했습니다.")
+                raise ValueError("업로드 스타일 ZIP 안에서 이미지 파일을 찾지 못했습니다.")
             style_reference_image_paths = pick_style_images_for_generation(style_image_paths)
-            log_step(logs, f"gpt-image-2 direct reference용 대표 이미지 선별 완료: {len(style_reference_image_paths)}장")
+            log_step(logs, f"gpt-image-2 direct reference용 사용자 대표 이미지 선별 완료: {len(style_reference_image_paths)}장")
             style_ref = analyze_style_reference(
                 client=client,
                 style_image_paths=style_image_paths,
                 cache_key=style_cache_key,
                 logs=logs,
             )
-            log_step(logs, "스타일 레퍼런스 분석 완료")
+            log_step(logs, "사용자 스타일 Luna 분석 완료")
 
         raw_data = analyze_with_openai(
             client=client,
@@ -1161,9 +1216,11 @@ def process_smk_paths(
             f"- 대분류: {data.get('field_group', '')}\n"
             f"- 세부분야: {data.get('field_type', '')}\n"
             f"- 키워드: {', '.join(data.get('keywords', []))}\n"
+            f"- 스타일 모드: {style_mode}\n"
             f"- 스타일 이미지 수: {len(style_image_paths)}\n"
             f"- gpt-image-2 direct reference 이미지 수: {len(style_reference_image_paths)}\n"
-            f"- 기본 스타일 ZIP 자동 사용: {'예' if style_zip_path is None else '아니오(업로드 ZIP 사용)'}\n\n"
+            f"- 기본 스타일 Luna 분석: {'생략(내장 JSON)' if style_mode == 'builtin_default' else '필요 시 실행'}\n"
+            f"- 사용자 스타일 ZIP: {'없음' if style_zip_path is None else '사용'}\n\n"
             f"[실행 로그]\n" + "\n".join(logs)
         )
 
