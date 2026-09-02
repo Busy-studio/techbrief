@@ -3,11 +3,8 @@ import os
 import streamlit as st
 
 from banner_core import (
-    IMAGE_MODEL,
     IMAGE_QUALITY,
     IMAGE_SIZE,
-    MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION,
-    TEXT_MODEL,
     process_smk_streamlit,
 )
 
@@ -30,11 +27,24 @@ st.caption("SMK PDF를 업로드하면 부산대학교 Tech Brief 스타일 배�
 
 with st.sidebar:
     st.subheader("실행 설정")
-    st.write(f"텍스트 모델: `{TEXT_MODEL}`")
-    st.write(f"이미지 모델: `{IMAGE_MODEL}`")
-    st.write(f"이미지 크기: `{IMAGE_SIZE}`")
-    st.write(f"이미지 품질: `{IMAGE_QUALITY}`")
-    st.write(f"Direct reference: `{MAX_STYLE_REFERENCE_IMAGES_FOR_GENERATION}장`")
+    size_options = ["1280x720", "1536x1024", "2048x1152"]
+    quality_options = ["medium", "high"]
+
+    default_size_index = size_options.index(IMAGE_SIZE) if IMAGE_SIZE in size_options else size_options.index("2048x1152")
+    default_quality_index = quality_options.index(IMAGE_QUALITY) if IMAGE_QUALITY in quality_options else quality_options.index("high")
+
+    selected_image_size = st.selectbox(
+        "이미지 크기",
+        options=size_options,
+        index=default_size_index,
+        help="크기가 클수록 보통 더 오래 걸립니다.",
+    )
+    selected_image_quality = st.selectbox(
+        "이미지 품질",
+        options=quality_options,
+        index=default_quality_index,
+        help="high가 더 느릴 수 있습니다.",
+    )
 
 col1, col2 = st.columns([1, 1])
 
@@ -70,6 +80,8 @@ if run:
                 uploaded_file=uploaded_file,
                 style_zip_file=style_zip,
                 api_key=api_key,
+                image_size=selected_image_size,
+                image_quality=selected_image_quality,
             )
 
         if not result.get("success"):

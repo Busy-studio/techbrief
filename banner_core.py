@@ -1016,9 +1016,13 @@ def generate_final_banner(
     client: OpenAI,
     prompt: str,
     style_reference_image_paths: Optional[List[str]] = None,
+    image_size: Optional[str] = None,
+    image_quality: Optional[str] = None,
     logs: Optional[List[str]] = None,
 ) -> bytes:
     style_reference_image_paths = [p for p in (style_reference_image_paths or []) if p]
+    image_size = clean_text(image_size or IMAGE_SIZE) or IMAGE_SIZE
+    image_quality = clean_text(image_quality or IMAGE_QUALITY) or IMAGE_QUALITY
 
     if style_reference_image_paths:
         file_handles: List[io.BufferedReader] = []
@@ -1035,8 +1039,8 @@ def generate_final_banner(
                     model=IMAGE_MODEL,
                     image=file_handles,
                     prompt=prompt,
-                    size=IMAGE_SIZE,
-                    quality=IMAGE_QUALITY,
+                    size=image_size,
+                    quality=image_quality,
                 )
 
             response = call_openai_with_retry(
@@ -1061,8 +1065,8 @@ def generate_final_banner(
             return client.images.generate(
                 model=IMAGE_MODEL,
                 prompt=prompt,
-                size=IMAGE_SIZE,
-                quality=IMAGE_QUALITY,
+                size=image_size,
+                quality=image_quality,
             )
 
         response = call_openai_with_retry(_call, logs=logs, step_name="최종 배너 생성")
@@ -1074,7 +1078,7 @@ def generate_final_banner(
     if logs is not None:
         log_step(
             logs,
-            f"최종 배너 생성 성공: {IMAGE_MODEL} / {IMAGE_SIZE} / quality={IMAGE_QUALITY} / mode={mode_desc}",
+            f"최종 배너 생성 성공: {IMAGE_MODEL} / {image_size} / quality={image_quality} / mode={mode_desc}",
         )
     return image_bytes
 
@@ -1093,6 +1097,8 @@ def process_smk_paths(
     input_path: str,
     style_zip_path: Optional[str] = None,
     api_key: Optional[str] = None,
+    image_size: Optional[str] = None,
+    image_quality: Optional[str] = None,
 ) -> Dict[str, Any]:
     logs: List[str] = []
     extracted_style_dir = None
@@ -1101,7 +1107,10 @@ def process_smk_paths(
         log_step(logs, "앱 시작")
         ensure_dir(OUTPUT_CACHE_DIR)
         client = get_client(api_key=api_key)
+        image_size = clean_text(image_size or IMAGE_SIZE) or IMAGE_SIZE
+        image_quality = clean_text(image_quality or IMAGE_QUALITY) or IMAGE_QUALITY
         log_step(logs, "OpenAI 클라이언트 초기화 완료")
+        log_step(logs, f"이미지 생성 설정: size={image_size}, quality={image_quality}")
 
         text, image_bytes, image_mime_type, original_name = prepare_input(input_path)
         log_step(logs, f"입력 파일 준비 완료: {original_name}")
@@ -1184,6 +1193,8 @@ def process_smk_paths(
             client,
             final_prompt,
             style_reference_image_paths=style_reference_image_paths,
+            image_size=image_size,
+            image_quality=image_quality,
             logs=logs,
         )
         log_step(logs, f"최종 배너 이미지 바이트 생성 완료: {len(final_img_bytes)} bytes")
@@ -1259,11 +1270,23 @@ def process_smk_paths(
             shutil.rmtree(extracted_style_dir, ignore_errors=True)
 
 
-def process_smk_streamlit(uploaded_file, style_zip_file=None, api_key: Optional[str] = None) -> Dict[str, Any]:
+def process_smk_streamlit(
+    uploaded_file,
+    style_zip_file=None,
+    api_key: Optional[str] = None,
+    image_size: Optional[str] = None,
+    image_quality: Optional[str] = None,
+) -> Dict[str, Any]:
     input_path = save_uploaded_file(uploaded_file)
     style_path = save_uploaded_file(style_zip_file) if style_zip_file else None
     try:
-        return process_smk_paths(input_path=input_path, style_zip_path=style_path, api_key=api_key)
+        return process_smk_paths(
+            input_path=input_path,
+            style_zip_path=style_path,
+            api_key=api_key,
+            image_size=image_size,
+            image_quality=image_quality,
+        )
     finally:
         for path in [input_path, style_path]:
             if path and os.path.exists(path):

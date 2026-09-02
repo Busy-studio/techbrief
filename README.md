@@ -17,6 +17,15 @@ SMK PDF 또는 이미지를 업로드하면 부산대학교 Tech Brief 스타일
 - `requirements.txt`: 배포 의존성
 - `.streamlit/config.toml`: Streamlit 기본 설정
 
+## Streamlit UI 설정
+
+사이드바에서 아래 두 항목만 사용자가 직접 바꿀 수 있습니다.
+
+- 이미지 크기: `1280x720` / `1536x1024` / `2048x1152`
+- 이미지 품질: `medium` / `high`
+
+텍스트 모델, 이미지 모델, direct reference 수는 코드 내부 기본값으로 유지됩니다.
+
 ## Streamlit Secrets
 
 Streamlit Community Cloud의 **Advanced settings > Secrets** 또는 로컬 `.streamlit/secrets.toml`에 아래와 같이 입력합니다.
