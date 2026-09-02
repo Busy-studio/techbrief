@@ -718,11 +718,11 @@ def build_full_banner_prompt(data: Dict[str, Any], style_ref: Dict[str, Any]) ->
 
     typography_instruction = get_field_typography_instruction(field_group, style_ref)
 
-    if strict_default_style:
+    if strict_default_style and len(keywords) == 0:
         text_instruction = (
-            "Do not render any large main keyword, slogan, technology title, component label, "
-            "callout text, annotation, arrow label, or explanatory text. "
-            "The only required text in the image is the Busan National University label and the department/professor line."
+            "Do not add extra main keyword text when no concise keyword was extracted. "
+            "Only keep the Busan National University label and the department/professor line. "
+            "Still do not add component labels, callouts, titles, or explanatory text."
         )
     elif len(keywords) == 0:
         text_instruction = "Do not place extra keyword text in the main visual area."
@@ -746,8 +746,10 @@ def build_full_banner_prompt(data: Dict[str, Any], style_ref: Dict[str, Any]) ->
 - Prefer recognizable real equipment, materials, laboratories, industrial environments, devices, or application scenes
 - Do not invent a transparent central 3D specimen, exploded view, cutaway model, schematic block, or hero product render unless the source technology itself is literally such a visible object
 - Do not add component callouts, leader lines, arrows, measurement labels, structure labels, or explanatory annotations
-- Do not add large Korean keywords, slogans, titles, or glowing headline typography
-- The only required text is the small university label and the department/professor line
+- Allow 1 to 3 short Korean technology keywords when they are provided by the uploaded technology analysis
+- Those keywords should be noticeable but secondary to the photographic subjects: medium-size, clean, bold, and integrated into open space
+- Do not make the keywords oversized, poster-like, or the dominant headline of the entire banner
+- Keep the university label plus department/professor line as the constant identifier, and treat the technology keywords as supporting visual text
 - Digital overlays may appear only as subtle secondary atmosphere when truly relevant; keep the underlying photographic subject dominant
 - Avoid game-key-art styling, cyberpunk neon, excessive light trails, laser beams, glowing outlines, hologram panels, and exaggerated HDR
 - Preserve realistic materials, plausible lighting, and ordinary photographic texture
@@ -829,8 +831,8 @@ You MUST replicate the same banner design family used in the reference images.
 
 [Text Restraint System]
 - Follow the text policy extracted from the reference style
-- If the reference style uses no main keywords, do not invent any
-- Do not turn metadata keywords into headline text unless the reference style explicitly requires that behavior
+- For the default PNU style, use only 1 to 3 short Korean technology keywords from the analysis when available
+- Those keywords are allowed as supporting visual text, but they must not become a giant headline or dominate the full canvas
 - Never add long explanations, fake labels, or repeated text
 - Do not duplicate Korean text for emphasis, shadow, echo, or layout balance
 
@@ -935,8 +937,12 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - reference keyword weight: {keyword_typography.get('weight', '')}
 - reference keyword integration: {keyword_typography.get('integration', '')}
 - domain-specific typography instruction: {typography_instruction}
-- follow the reference text amount exactly
-- never make keyword text large or dominant when the reference style does not do so
+- use at most 1 to 3 short Korean keywords only, when extracted from the technology analysis
+- render the keywords in a clean bold Korean sans-serif style, visually clear but not oversized
+- keywords should complement the image, not overpower it
+- place the keywords in open negative space, typically lower-left, lower-center, or lower-right, avoiding overlap with the university label
+- keep them medium to moderately large for readability, but smaller and less dominant than a movie-poster headline
+- a soft glow or contrast edge is allowed only enough for legibility; avoid giant neon headline treatment
 - never invent labels merely because the source technology contains named layers or components
 
 [University Label System - Reference Replication]
@@ -1004,7 +1010,8 @@ It must NOT look like a detailed infographic, poster, brochure, teaching slide, 
 - avoid many explanatory labels across the image
 - prefer large blended photographic scenes over diagrammatic explanation
 - the image should feel like a premium visual key art banner, not a teaching slide
-- do not invent headline keywords, slogans, component names, or explanatory labels beyond what the active reference style explicitly allows
+- do not invent extra slogans, component names, or explanatory labels beyond the extracted short technology keywords
+- do not convert the short technology keywords into a single giant headline block
 - do not repeat any text
 - additional reference do-not-do rules: {', '.join(style_dont) if style_dont else 'none'}
 - content-specific forbidden elements: {', '.join(forbidden) if forbidden else 'none'}
