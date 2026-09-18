@@ -26,14 +26,14 @@ with st.sidebar:
 
     PRESETS = {
         "빠른 시안": {"size": "1280x720", "quality": "medium"},
-        "표준": {"size": "1536x864", "quality": "medium"},
-        "최종 고품질": {"size": "2048x1152", "quality": "high"},
+        "표준": {"size": "1536x864", "quality": "high"},
+        "최종 고품질": {"size": "2048x1152", "quality": "max"},
     }
     size_options = ["1280x720", "1536x864", "2048x1152"]
-    quality_options = ["medium", "high"]
+    quality_options = ["medium", "high", "xhigh", "max"]
 
     if "render_preset" not in st.session_state:
-        st.session_state.render_preset = "빠른 시안"
+        st.session_state.render_preset = "최종 고품질"
     if "selected_image_size" not in st.session_state:
         st.session_state.selected_image_size = PRESETS[st.session_state.render_preset]["size"]
     if "selected_image_quality" not in st.session_state:
@@ -61,7 +61,7 @@ with st.sidebar:
         "이미지 품질",
         options=quality_options,
         key="selected_image_quality",
-        help="medium은 시안/표준용, high는 최종본용입니다.",
+        help="Sunburst 품질 단계입니다. max가 가장 높은 렌더링 품질입니다.",
     )
 
 col1, col2 = st.columns([1, 1])
