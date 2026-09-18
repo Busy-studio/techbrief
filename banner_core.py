@@ -25,7 +25,7 @@ from openai import OpenAI
 # =========================================================
 API_KEY_ENV_NAME = "OPENAI_API_KEY"
 TEXT_MODEL = os.getenv("TEXT_MODEL", "gpt-5.6-luna")
-IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gpt-image-2")
+IMAGE_MODEL = os.getenv("IMAGE_MODEL", "gpt-image-2.5-sunburst")
 
 DEFAULT_STYLE_ZIP_URL = os.getenv(
     "DEFAULT_STYLE_ZIP_URL",
@@ -33,7 +33,7 @@ DEFAULT_STYLE_ZIP_URL = os.getenv(
 )
 
 IMAGE_SIZE = os.getenv("IMAGE_SIZE", "2048x1152")
-IMAGE_QUALITY = os.getenv("IMAGE_QUALITY", "high")
+IMAGE_QUALITY = os.getenv("IMAGE_QUALITY", "max")
 OPENAI_MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "3"))
 OPENAI_BASE_WAIT = float(os.getenv("OPENAI_BASE_WAIT", "2.0"))
 MAX_STYLE_IMAGES = int(os.getenv("MAX_STYLE_IMAGES", "6"))
@@ -1040,7 +1040,7 @@ def generate_final_banner(
             response = call_openai_with_retry(
                 _call,
                 logs=logs,
-                step_name="최종 배너 생성 (gpt-image-2 direct reference)",
+                step_name=f"최종 배너 생성 ({IMAGE_MODEL} direct reference)",
             )
             mode_desc = f"edit/direct-reference {len(style_reference_image_paths)}장"
         finally:
@@ -1104,7 +1104,7 @@ def process_smk_paths(
         image_size = clean_text(image_size or IMAGE_SIZE) or IMAGE_SIZE
         image_quality = clean_text(image_quality or IMAGE_QUALITY) or IMAGE_QUALITY
         log_step(logs, "OpenAI 클라이언트 초기화 완료")
-        log_step(logs, f"이미지 생성 설정: size={image_size}, quality={image_quality}")
+        log_step(logs, f"이미지 생성 설정: model={IMAGE_MODEL}, size={image_size}, quality={image_quality}")
 
         text, image_bytes, image_mime_type, original_name = prepare_input(input_path)
         log_step(logs, f"입력 파일 준비 완료: {original_name}")
@@ -1160,7 +1160,7 @@ def process_smk_paths(
             if not style_image_paths:
                 raise ValueError("업로드 스타일 ZIP 안에서 이미지 파일을 찾지 못했습니다.")
             style_reference_image_paths = pick_style_images_for_generation(style_image_paths)
-            log_step(logs, f"gpt-image-2 direct reference용 사용자 대표 이미지 선별 완료: {len(style_reference_image_paths)}장")
+            log_step(logs, f"{IMAGE_MODEL} direct reference용 사용자 대표 이미지 선별 완료: {len(style_reference_image_paths)}장")
             style_ref = analyze_style_reference(
                 client=client,
                 style_image_paths=style_image_paths,
@@ -1227,7 +1227,7 @@ def process_smk_paths(
             f"- 스타일 모드: {style_mode}\n"
             f"- 스타일 이미지 수: {len(style_image_paths)}\n"
             f"- 스타일 생성 모드: {'Gemini 호환 prompt-only 기본 스타일' if style_zip_path is None else '사용자 ZIP direct reference'}\n"
-            f"- gpt-image-2 direct reference 이미지 수: {len(style_reference_image_paths)}\n"
+            f"- {IMAGE_MODEL} direct reference 이미지 수: {len(style_reference_image_paths)}\n"
             f"- 이미지 크기: {image_size}\n"
             f"- 이미지 품질: {image_quality}\n"
             f"- 기본 스타일 Luna 분석: {'생략(내장 JSON)' if style_mode == 'builtin_default' else '필요 시 실행'}\n"
