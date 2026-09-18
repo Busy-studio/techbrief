@@ -5,8 +5,8 @@ SMK PDF 또는 이미지를 업로드하면 부산대학교 Tech Brief 스타일
 ## AI 모델 구성
 
 - 기술 내용/스타일 레퍼런스 분석: `gpt-5.6-luna`
-- 최종 이미지 생성: `gpt-image-2`
-- 기본 UI 프리셋: `빠른 시안` (`1280x720`, `medium`)
+- 최종 이미지 생성: `gpt-image-2.5-sunburst`
+- 기본 UI 프리셋: `최종 고품질` (`2048x1152`, `max`)
 
 기존 Gemini 호출은 제거되어 Google API 키가 필요하지 않습니다.
 
@@ -23,13 +23,13 @@ SMK PDF 또는 이미지를 업로드하면 부산대학교 Tech Brief 스타일
 
 - 생성 프리셋: `빠른 시안` / `표준` / `최종 고품질`
 - 이미지 크기: `1280x720` / `1536x864` / `2048x1152` (모두 16:9)
-- 이미지 품질: `medium` / `high`
+- 이미지 품질: `medium` / `high` / `xhigh` / `max`
 
 프리셋 매핑:
 
 - 빠른 시안: `1280x720 + medium`
-- 표준: `1536x864 + medium`
-- 최종 고품질: `2048x1152 + high`
+- 표준: `1536x864 + high`
+- 최종 고품질: `2048x1152 + max`
 
 텍스트 모델, 이미지 모델, direct reference 수는 코드 내부 기본값으로 유지됩니다.
 
@@ -60,9 +60,9 @@ streamlit run app.py
 
 ```text
 TEXT_MODEL=gpt-5.6-luna
-IMAGE_MODEL=gpt-image-2
+IMAGE_MODEL=gpt-image-2.5-sunburst
 IMAGE_SIZE=2048x1152
-IMAGE_QUALITY=high
+IMAGE_QUALITY=max
 OPENAI_MAX_RETRIES=3
 OPENAI_BASE_WAIT=2.0
 MAX_STYLE_IMAGES=6
@@ -75,11 +75,11 @@ DEFAULT_STYLE_ZIP_URL=<기본 스타일 ZIP 주소>
 
 1. SMK PDF라면 텍스트와 첫 페이지 이미지를 추출합니다.
 2. 스타일 ZIP을 따로 올리지 않으면 앱에 포함된 `assets/default_style_ref.json`을 즉시 사용하므로 스타일 분석용 `gpt-5.6-luna` 호출은 발생하지 않습니다.
-3. 기본 스타일에서는 앱에 포함된 대표 레퍼런스 2장을 `gpt-image-2`에 직접 전달합니다.
+3. 기본 스타일에서는 앱에 포함된 대표 레퍼런스 2장을 `gpt-image-2.5-sunburst`에 직접 전달합니다.
 4. 사용자가 새 스타일 ZIP을 올린 경우에만 대표 이미지를 `gpt-5.6-luna`가 분석하여 새 스타일 JSON을 만들고, 동일 ZIP 해시의 결과는 로컬 캐시에 재사용합니다.
 5. SMK 텍스트 + 첫 페이지 이미지는 `gpt-5.6-luna`가 분석하여 기술/키워드/장면 JSON을 만듭니다.
 6. 기존 Tech Brief 프롬프트 규칙을 결합합니다.
-7. `gpt-image-2`가 레퍼런스 이미지 + 최종 프롬프트를 함께 받아 16:9 배너 PNG를 생성합니다.
+7. `gpt-image-2.5-sunburst`가 레퍼런스 이미지 + 최종 프롬프트를 함께 받아 16:9 배너 PNG를 생성합니다.
 
 ## 참고
 
@@ -88,9 +88,9 @@ DEFAULT_STYLE_ZIP_URL=<기본 스타일 ZIP 주소>
 
 ## direct reference 동작 방식
 
-- 기본 스타일은 앱에 내장된 대표 이미지 2장을 `gpt-image-2`에 직접 전달합니다.
-- 사용자가 새 스타일 ZIP을 올리면 그 ZIP에서 대표 이미지 최대 2장을 선별해 `gpt-image-2`에 직접 전달합니다.
-- 이 레퍼런스 이미지는 최종 생성 호출마다 `gpt-image-2`가 직접 처리합니다.
+- 기본 스타일은 앱에 내장된 대표 이미지 2장을 `gpt-image-2.5-sunburst`에 직접 전달합니다.
+- 사용자가 새 스타일 ZIP을 올리면 그 ZIP에서 대표 이미지 최대 2장을 선별해 `gpt-image-2.5-sunburst`에 직접 전달합니다.
+- 이 레퍼런스 이미지는 최종 생성 호출마다 `gpt-image-2.5-sunburst`가 직접 처리합니다.
 - 같은 사용자 스타일 ZIP은 ZIP 해시 기반 스타일 분석 JSON 캐시를 우선 재사용하므로, 캐시가 남아 있으면 `gpt-5.6-luna` 스타일 분석을 다시 하지 않습니다.
 - 기본 스타일에서는 스타일 분석 JSON 자체가 앱에 내장되어 있으므로 컨테이너 캐시 유무와 관계없이 스타일 Luna 호출이 발생하지 않습니다.
 
@@ -120,8 +120,8 @@ DEFAULT_STYLE_ZIP_URL=<기본 스타일 ZIP 주소>
 기본 스타일은 기존 Gemini 버전에서 사용하던 최종 배너 프롬프트를 그대로 복원해 사용합니다.
 
 - 기본 스타일: 내장 `default_style_ref.json` + 원본 Gemini `build_full_banner_prompt()`
-- 기본 스타일에서는 `gpt-image-2`에 레퍼런스 이미지를 직접 전달하지 않음
-- 사용자가 새 스타일 ZIP을 올린 경우에만 Luna가 새 스타일을 분석하고 `gpt-image-2` direct reference를 사용
+- 기본 스타일에서는 `gpt-image-2.5-sunburst`에 레퍼런스 이미지를 직접 전달하지 않음
+- 사용자가 새 스타일 ZIP을 올린 경우에만 Luna가 새 스타일을 분석하고 `gpt-image-2.5-sunburst` direct reference를 사용
 - 기본 스타일의 레퍼런스 이미지는 배포 자산으로 남아 있지만 최종 생성 입력에는 사용하지 않음
 
-이 구조는 기존 Gemini 생성 흐름의 스타일 동작을 최대한 유지하면서 이미지 모델만 `gpt-image-2`로 교체하기 위한 구성입니다.
+이 구조는 기존 Gemini 생성 흐름의 스타일 동작을 최대한 유지하면서 이미지 모델만 `gpt-image-2.5-sunburst`로 교체하기 위한 구성입니다.
